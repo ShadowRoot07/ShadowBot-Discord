@@ -1,0 +1,31 @@
+name: ShadowBot 24/7 Deployment
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: # Permite encenderlo manualmente desde la web
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargando repositorio
+        uses: actions/checkout@v3
+
+      - name: Configurando Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Instalando Dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Encendiendo el Bot
+        env:
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+        run: python main.py
+
