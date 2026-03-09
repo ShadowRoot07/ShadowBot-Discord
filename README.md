@@ -14,6 +14,10 @@ Professional automation and scraping project developed entirely in Termux.
 pip install -r requirements.txt
 python main.py
 
+```
+
+## Project Directory Organization Plan.
+
 ```txt
 ShadowBot-Discord/
 ├── .env                # Variables sensibles (Token, API Keys)
