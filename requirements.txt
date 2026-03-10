@@ -4,3 +4,6 @@ google-generativeai
 beautifulsoup4
 requests
 psycopg2-binary
+playwright
+playwright-stealth
+

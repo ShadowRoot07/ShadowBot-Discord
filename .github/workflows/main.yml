@@ -3,7 +3,7 @@ name: ShadowBot 24/7 Deployment
 on:
   push:
     branches: [ main ]
-  workflow_dispatch: # Permite encenderlo manualmente desde la web
+  workflow_dispatch:
 
 jobs:
   build:
@@ -22,12 +22,14 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          # Instalamos los navegadores de Playwright y sus dependencias de sistema
+          python -m playwright install chromium --with-deps
 
       - name: Encendiendo el Bot
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          PYTHONUNBUFFERED: 1  # Esto sirve para que veas los logs en tiempo real sin retrasos
+          PYTHONUNBUFFERED: 1
         run: python main.py
 
