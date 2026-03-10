@@ -16,37 +16,38 @@ class AIChat(commands.Cog):
         base_url = os.getenv("DATABASE_URL", "").split('?')[0]
         self.db_url = f"{base_url}?sslmode=require"
         
-        # Inicialización de sistemas
+        # Selección de modelo ultra-estable
         self.model = self.obtener_modelo_dinamico()
         self.init_db()
         print(f"--- [SHADOWBOT CORE READY] ---")
 
     def obtener_modelo_dinamico(self):
-        """Busca el modelo 1.5-flash con el nombre exacto compatible."""
+        """Busca el modelo 1.5-flash usando los alias más compatibles."""
         try:
-            modelos_disponibles = [
-                m.name for m in genai.list_models() 
-                if 'generateContent' in m.supported_generation_methods
+            # Listamos para ver qué nombres prefiere tu entorno actual
+            modelos_en_red = [m.name for m in genai.list_models()]
+            print(f"📡 Modelos detectados en la red: {modelos_en_red}")
+
+            # Lista de candidatos en orden de estabilidad para el plan GRATUITO
+            # Probamos nombres con y sin prefijo 'models/'
+            candidatos = [
+                "gemini-1.5-flash-latest",
+                "gemini-1.5-flash",
+                "models/gemini-1.5-flash-latest",
+                "models/gemini-1.5-flash"
             ]
-            
-            # Buscamos primero el alias 'latest' que es el más estable
-            target = "models/gemini-1.5-flash-latest"
-            if target in modelos_disponibles:
-                print(f"✅ Vinculación exitosa: {target}")
-                return genai.GenerativeModel(target)
-            
-            # Si no, buscamos cualquier versión 1.5-flash que esté en la lista
-            for m in modelos_disponibles:
-                if "gemini-1.5-flash" in m:
-                    print(f"✅ Vinculación alternativa: {m}")
-                    return genai.GenerativeModel(m)
-                    
+
+            for candidato in candidatos:
+                if candidato in modelos_en_red or f"models/{candidato}" in modelos_en_red:
+                    print(f"✅ Enlace establecido con éxito: {candidato}")
+                    return genai.GenerativeModel(candidato)
+
         except Exception as e:
-            print(f"⚠️ Error escaneando modelos: {e}")
+            print(f"⚠️ Error en escaneo dinámico: {e}")
             
-        # Fallback manual con el prefijo 'models/' que es el que pide el error 404
-        print("⚠️ Usando fallback manual: models/gemini-1.5-flash")
-        return genai.GenerativeModel('models/gemini-1.5-flash')
+        # Si la lista falla, el nombre más estándar para la v1beta es este:
+        print("⚠️ Usando dirección de emergencia estándar.")
+        return genai.GenerativeModel('gemini-1.5-flash')
 
     def get_db_connection(self):
         return psycopg2.connect(self.db_url)
@@ -120,7 +121,6 @@ class AIChat(commands.Cog):
                 )
 
                 try:
-                    # Usamos la instancia del modelo detectada al inicio
                     response = self.model.generate_content(f"{instruccion}\n\nUsuario: {raw_content}")
                     respuesta_final = response.text
 
