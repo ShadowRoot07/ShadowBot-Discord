@@ -91,6 +91,7 @@ class AIChat(commands.Cog):
                 user_id = message.author.id
                 raw_content = message.content.replace(f'<@!{self.bot.user.id}>', '').replace(f'<@{self.bot.user.id}>', '').strip()
 
+                # --- Lógica de Scraping Automático ---
                 urls = re.findall(r'(https?://\S+)', raw_content)
                 contexto_web = ""
                 
