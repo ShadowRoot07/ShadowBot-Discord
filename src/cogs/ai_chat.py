@@ -1,4 +1,5 @@
 import os
+import discord
 import google.generativeai as genai
 from discord.ext import commands
 
