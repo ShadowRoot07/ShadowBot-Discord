@@ -16,28 +16,34 @@ class AIChat(commands.Cog):
         base_url = os.getenv("DATABASE_URL", "").split('?')[0]
         self.db_url = f"{base_url}?sslmode=require"
         
-        # Inicialización de sistemas
+        # Inicialización de sistemas - Forzando estabilidad de cuota
         self.model = self.obtener_modelo_dinamico()
         self.init_db()
         print(f"--- [SHADOWBOT CORE READY] ---")
 
     def obtener_modelo_dinamico(self):
-        """Busca dinámicamente el mejor modelo Gemini gratuito disponible."""
+        """Busca el mejor modelo Gemini con cuota gratuita alta (1.5-flash)."""
         try:
             modelos_disponibles = [
                 m.name for m in genai.list_models() 
                 if 'generateContent' in m.supported_generation_methods
             ]
             
+            # Prioridad Absoluta: 1.5-flash-latest (Cuota: 1500 RPM / Gratuitos)
+            # Evitamos versiones 2.0 o 2.5 porque tienen límites de solo 20-50 mensajes al día.
             for m in modelos_disponibles:
-                if "1.5-flash" in m and "latest" in m:
+                if "gemini-1.5-flash" in m and "latest" in m:
+                    print(f"✅ Vinculación de alta cuota establecida: {m}")
                     return genai.GenerativeModel(m)
             
             for m in modelos_disponibles:
-                if "flash" in m:
+                if "gemini-1.5-flash" in m:
+                    print(f"✅ Vinculación estable: {m}")
                     return genai.GenerativeModel(m)
-        except:
-            pass
+        except Exception as e:
+            print(f"⚠️ Error escaneando modelos: {e}")
+            
+        # Fallback manual si el escaneo falla
         return genai.GenerativeModel('gemini-1.5-flash')
 
     def get_db_connection(self):
@@ -85,13 +91,12 @@ class AIChat(commands.Cog):
             bucket = self._cd.get_bucket(message)
             retry_after = bucket.update_rate_limit()
             if retry_after: 
-                return await message.reply(f"⏳ Espera {round(retry_after, 1)}s.")
+                return await message.reply(f"⏳ Sistema sobrecalentado. Espera {round(retry_after, 1)}s.")
 
             async with message.channel.typing():
                 user_id = message.author.id
                 raw_content = message.content.replace(f'<@!{self.bot.user.id}>', '').replace(f'<@{self.bot.user.id}>', '').strip()
 
-                # --- Lógica de Scraping Automático ---
                 urls = re.findall(r'(https?://\S+)', raw_content)
                 contexto_web = ""
                 
@@ -116,7 +121,6 @@ class AIChat(commands.Cog):
                     response = self.model.generate_content(f"{instruccion}\n\nUsuario: {raw_content}")
                     respuesta_final = response.text
 
-                    # --- CORRECCIÓN DE LÍMITE DE DISCORD ---
                     if len(respuesta_final) > 1950:
                         respuesta_final = respuesta_final[:1950] + "\n\n*(Transmisión cortada por exceso de datos...)*"
 
