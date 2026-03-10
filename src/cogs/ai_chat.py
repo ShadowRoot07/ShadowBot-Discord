@@ -23,37 +23,21 @@ class AIChat(commands.Cog):
 
     def obtener_modelo_dinamico(self):
         """Busca dinámicamente el mejor modelo Gemini gratuito disponible."""
-        print("🔍 Escaneando red en busca de modelos disponibles...")
         try:
-            # Listamos todos los modelos disponibles para tu API KEY
             modelos_disponibles = [
                 m.name for m in genai.list_models() 
                 if 'generateContent' in m.supported_generation_methods
             ]
             
-            # Prioridad 1: 1.5-flash (el más estable y rápido)
             for m in modelos_disponibles:
                 if "1.5-flash" in m and "latest" in m:
-                    print(f"✅ Enlace establecido con: {m}")
                     return genai.GenerativeModel(m)
             
-            # Prioridad 2: Cualquier versión flash
             for m in modelos_disponibles:
                 if "flash" in m:
-                    print(f"✅ Enlace de respaldo (Flash): {m}")
                     return genai.GenerativeModel(m)
-            
-            # Prioridad 3: Gemini 1.0 Pro (si no hay flash)
-            for m in modelos_disponibles:
-                if "gemini-pro" in m or "1.0-pro" in m:
-                    print(f"✅ Enlace de respaldo (Pro Legacy): {m}")
-                    return genai.GenerativeModel(m)
-
-        except Exception as e:
-            print(f"⚠️ Error escaneando modelos: {e}")
-        
-        # Fallback definitivo si todo lo anterior falla
-        print("⚠️ Usando dirección estática de emergencia: gemini-1.5-flash")
+        except:
+            pass
         return genai.GenerativeModel('gemini-1.5-flash')
 
     def get_db_connection(self):
@@ -71,7 +55,6 @@ class AIChat(commands.Cog):
                         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     );''')
                     conn.commit()
-            print("✅ DB: Sincronizada.")
         except Exception as e:
             print(f"❌ DB ERROR: {e}")
 
@@ -102,25 +85,21 @@ class AIChat(commands.Cog):
             bucket = self._cd.get_bucket(message)
             retry_after = bucket.update_rate_limit()
             if retry_after: 
-                return await message.reply(f"⏳ Sistema sobrecalentado. Espera {round(retry_after, 1)}s.")
+                return await message.reply(f"⏳ Espera {round(retry_after, 1)}s.")
 
             async with message.channel.typing():
                 user_id = message.author.id
                 raw_content = message.content.replace(f'<@!{self.bot.user.id}>', '').replace(f'<@{self.bot.user.id}>', '').strip()
 
-                # --- Lógica de Scraping Automático ---
                 urls = re.findall(r'(https?://\S+)', raw_content)
                 contexto_web = ""
                 
                 if urls:
                     scraper = self.bot.get_cog('WebScraper')
                     if scraper:
-                        print(f"🕸️ Iniciando escaneo de URL: {urls[0]}")
                         datos = await scraper.extraer_contenido(urls[0])
                         if "error" not in datos:
-                            contexto_web = f"\n[DATOS EXTRAÍDOS DE LA RED INTERNA]\nSitio: {datos['titulo']}\nContenido: {datos['texto']}\n"
-                        else:
-                            print(f"⚠️ Fallo en scraping: {datos['error']}")
+                            contexto_web = f"\n[DATOS EXTRAÍDOS DE LA RED]\nSitio: {datos['titulo']}\nContenido: {datos['texto']}\n"
 
                 historial = self.obtener_historial(user_id)
                 memoria_str = "\n".join([f"{m['role']}: {m['content']}" for m in historial])
@@ -129,15 +108,20 @@ class AIChat(commands.Cog):
                     f"Eres ShadowBot_V1. Estilo Cyberpunk Verde Neón. "
                     f"Contexto previo: {memoria_str}\n"
                     f"{contexto_web}"
-                    f"Instrucción: Usa los datos extraídos para dar una respuesta técnica y precisa. "
-                    f"Si no hay datos, actúa normal."
+                    f"Instrucción: Sé conciso pero técnico. Si el texto es muy largo, resúmelo."
                 )
 
                 try:
                     response = self.model.generate_content(f"{instruccion}\n\nUsuario: {raw_content}")
+                    respuesta_final = response.text
+
+                    # --- CORRECCIÓN DE LÍMITE DE DISCORD ---
+                    if len(respuesta_final) > 1950:
+                        respuesta_final = respuesta_final[:1950] + "\n\n*(Transmisión cortada por exceso de datos...)*"
+
                     self.guardar_memoria(user_id, "usuario", raw_content)
-                    self.guardar_memoria(user_id, "bot", response.text)
-                    await message.reply(response.text)
+                    self.guardar_memoria(user_id, "bot", respuesta_final)
+                    await message.reply(respuesta_final)
                 except Exception as e:
                     await message.reply(f"🔥 Error en la matriz de IA: {e}")
 
