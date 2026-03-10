@@ -16,35 +16,37 @@ class AIChat(commands.Cog):
         base_url = os.getenv("DATABASE_URL", "").split('?')[0]
         self.db_url = f"{base_url}?sslmode=require"
         
-        # Inicialización de sistemas - Forzando estabilidad de cuota
+        # Inicialización de sistemas
         self.model = self.obtener_modelo_dinamico()
         self.init_db()
         print(f"--- [SHADOWBOT CORE READY] ---")
 
     def obtener_modelo_dinamico(self):
-        """Busca el mejor modelo Gemini con cuota gratuita alta (1.5-flash)."""
+        """Busca el modelo 1.5-flash con el nombre exacto compatible."""
         try:
             modelos_disponibles = [
                 m.name for m in genai.list_models() 
                 if 'generateContent' in m.supported_generation_methods
             ]
             
-            # Prioridad Absoluta: 1.5-flash-latest (Cuota: 1500 RPM / Gratuitos)
-            # Evitamos versiones 2.0 o 2.5 porque tienen límites de solo 20-50 mensajes al día.
-            for m in modelos_disponibles:
-                if "gemini-1.5-flash" in m and "latest" in m:
-                    print(f"✅ Vinculación de alta cuota establecida: {m}")
-                    return genai.GenerativeModel(m)
+            # Buscamos primero el alias 'latest' que es el más estable
+            target = "models/gemini-1.5-flash-latest"
+            if target in modelos_disponibles:
+                print(f"✅ Vinculación exitosa: {target}")
+                return genai.GenerativeModel(target)
             
+            # Si no, buscamos cualquier versión 1.5-flash que esté en la lista
             for m in modelos_disponibles:
                 if "gemini-1.5-flash" in m:
-                    print(f"✅ Vinculación estable: {m}")
+                    print(f"✅ Vinculación alternativa: {m}")
                     return genai.GenerativeModel(m)
+                    
         except Exception as e:
             print(f"⚠️ Error escaneando modelos: {e}")
             
-        # Fallback manual si el escaneo falla
-        return genai.GenerativeModel('gemini-1.5-flash')
+        # Fallback manual con el prefijo 'models/' que es el que pide el error 404
+        print("⚠️ Usando fallback manual: models/gemini-1.5-flash")
+        return genai.GenerativeModel('models/gemini-1.5-flash')
 
     def get_db_connection(self):
         return psycopg2.connect(self.db_url)
@@ -91,7 +93,7 @@ class AIChat(commands.Cog):
             bucket = self._cd.get_bucket(message)
             retry_after = bucket.update_rate_limit()
             if retry_after: 
-                return await message.reply(f"⏳ Sistema sobrecalentado. Espera {round(retry_after, 1)}s.")
+                return await message.reply(f"⏳ Espera {round(retry_after, 1)}s.")
 
             async with message.channel.typing():
                 user_id = message.author.id
@@ -118,6 +120,7 @@ class AIChat(commands.Cog):
                 )
 
                 try:
+                    # Usamos la instancia del modelo detectada al inicio
                     response = self.model.generate_content(f"{instruccion}\n\nUsuario: {raw_content}")
                     respuesta_final = response.text
 
