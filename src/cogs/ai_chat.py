@@ -4,24 +4,30 @@ import google.generativeai as genai
 from discord.ext import commands
 import requests
 from bs4 import BeautifulSoup
-import psycopg2 # <--- Para la base de datos
+import psycopg2
 
 class AIChat(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
         self.db_url = os.getenv("DATABASE_URL")
-        
-        # Inicializar Base de Datos
-        self.init_db()
 
-        # Configuración de modelo (igual que antes)
+        # Intentar inicializar la base de datos
+        try:
+            self.init_db()
+            print("✅ Conexión a Neon.tech exitosa.")
+        except Exception as e:
+            print(f"❌ Error crítico conectando a Neon: {e}")
+
         self.model = genai.GenerativeModel('gemini-1.5-flash')
-        self.chat = self.model.start_chat(history=[])
+        # Ya no usamos self.chat = self.model.start_chat porque ahora la memoria la manejas tú con SQL
+
+    def get_db_connection(self):
+        """Crea una conexión con SSL requerido para Neon."""
+        return psycopg2.connect(self.db_url, sslmode='require')
 
     def init_db(self):
-        """Crea la tabla de memoria si no existe en Neon."""
-        conn = psycopg2.connect(self.db_url)
+        conn = self.get_db_connection()
         cur = conn.cursor()
         cur.execute('''
             CREATE TABLE IF NOT EXISTS memoria_chat (
@@ -37,24 +43,30 @@ class AIChat(commands.Cog):
         conn.close()
 
     def guardar_memoria(self, user_id, role, content):
-        conn = psycopg2.connect(self.db_url)
-        cur = conn.cursor()
-        cur.execute("INSERT INTO memoria_chat (user_id, role, content) VALUES (%s, %s, %s)", 
-                    (user_id, role, content))
-        conn.commit()
-        cur.close()
-        conn.close()
+        try:
+            conn = self.get_db_connection()
+            cur = conn.cursor()
+            cur.execute("INSERT INTO memoria_chat (user_id, role, content) VALUES (%s, %s, %s)", 
+                        (user_id, role, content))
+            conn.commit()
+            cur.close()
+            conn.close()
+        except Exception as e:
+            print(f"⚠️ Error guardando memoria: {e}")
 
     def obtener_historial(self, user_id, limite=10):
-        conn = psycopg2.connect(self.db_url)
-        cur = conn.cursor()
-        cur.execute("SELECT role, content FROM memoria_chat WHERE user_id = %s ORDER BY id DESC LIMIT %s", 
-                    (user_id, limite))
-        filas = cur.fetchall()
-        cur.close()
-        conn.close()
-        # Los devolvemos en orden cronológico (del más viejo al más nuevo)
-        return [{"role": f[0], "content": f[1]} for f in reversed(filas)]
+        try:
+            conn = self.get_db_connection()
+            cur = conn.cursor()
+            cur.execute("SELECT role, content FROM memoria_chat WHERE user_id = %s ORDER BY id DESC LIMIT %s", 
+                        (user_id, limite))
+            filas = cur.fetchall()
+            cur.close()
+            conn.close()
+            return [{"role": f[0], "content": f[1]} for f in reversed(filas)]
+        except Exception as e:
+            print(f"⚠️ Error recuperando historial: {e}")
+            return []
 
     @commands.Cog.listener()
     async def on_message(self, message):
@@ -67,26 +79,29 @@ class AIChat(commands.Cog):
                     user_id = message.author.id
                     prompt_original = message.content.replace(f'<@!{self.bot.user.id}>', '').replace(f'<@{self.bot.user.id}>', '').strip()
 
-                    # 1. Recuperar memoria del usuario
+                    # 1. Recuperar memoria
                     historial = self.obtener_historial(user_id)
-                    contexto_memoria = "\n".join([f"{m['role']}: {m['content']}" for m in historial])
+                    contexto_memoria = ""
+                    for m in historial:
+                        role_label = "Sroot" if m['role'] == "usuario" else "Sbot"
+                        contexto_memoria += f"{role_label}: {m['content']}\n"
 
                     # 2. Instrucción de Sistema
                     instruccion_sistema = (
-                        f"SISTEMA: Eres ShadowBot_V1. Tienes acceso a la memoria de ShadowRoot Lab.\n"
-                        f"MEMORIA RECIENTE:\n{contexto_memoria}\n"
-                        f"Crea código en bloques Markdown. Responde con estilo Cyberpunk."
+                        f"SISTEMA: Eres ShadowBot_V1 de ShadowRoot Lab.\n"
+                        f"MEMORIA DE CONVERSACIÓN:\n{contexto_memoria}\n"
+                        f"Responde de forma concisa, Cyberpunk y usa bloques Markdown para código."
                     )
 
-                    response = self.model.generate_content(f"{instruccion_sistema}\nUsuario: {prompt_original}")
+                    response = self.model.generate_content(f"{instruccion_sistema}\n\nUsuario: {prompt_original}")
 
-                    # 3. Guardar en la base de datos (lo que dijiste tú y lo que dijo él)
+                    # 3. Guardar en DB
                     self.guardar_memoria(user_id, "usuario", prompt_original)
                     self.guardar_memoria(user_id, "bot", response.text)
 
                     await message.reply(response.text)
                 except Exception as e:
-                    await message.channel.send(f"⚠️ Error en mi memoria: {e}")
+                    await message.channel.send(f"⚠️ Error en mi núcleo: {e}")
 
 async def setup(bot):
     await bot.add_cog(AIChat(bot))
