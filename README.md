@@ -1,7 +1,7 @@
 # 🕷️ ShadowBot Discord V2
 
 Professional automation and scraping project developed entirely in Termux.
-
+   
 ## 🚀 Features
 - **Built-in AI:** Fluid conversation powered by the Gemini engine.
 
