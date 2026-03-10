@@ -2,6 +2,8 @@ import os
 import discord
 import google.generativeai as genai
 from discord.ext import commands
+import requests
+from bs4 import BeautifulSoup
 
 class AIChat(commands.Cog):
     def __init__(self, bot):
@@ -51,9 +53,13 @@ class AIChat(commands.Cog):
                     if not prompt:
                         prompt = "Hola"
 
+                    
                     response = self.chat.send_message(
-                        f"Tu nombre es ShadowBot_V1. Creado por ShadowRoot07. "
-                        f"Responde de forma breve y profesional a: {prompt}"
+                        f"SISTEMA: Actúa como ShadowBot_V1, la IA avanzada de ShadowRoot Lab. "
+                        f"Tu creador es ShadowRoot07 (un desarrollador de 1.92m con heterocromía). "
+                        f"Tu estilo es profesional, analítico y con toques Cyberpunk. "
+                        f"Usa emojis como 🤖, ⚡, 💾 o 🟢 de forma moderada. "
+                        f"Responde de forma concisa a: {prompt}"
                     )
 
                     await message.reply(response.text)
@@ -63,6 +69,14 @@ class AIChat(commands.Cog):
                         await message.channel.send("⚠️ Mi cerebro gratuito está descansando un momento (límite de cuota). Inténtalo en unos segundos.")
                     else:
                         await message.channel.send(f"⚠️ Error en mi núcleo cerebral: {e}")
+
+    async def buscar_siembra(self, planta):
+        """Función básica para extraer info de siembra (mañana la puliremos)"""
+        url = f"https://www.google.com/search?q=cuando+sembrar+{planta}+en+venezuela"
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        # Aquí irá la lógica de extracción que aprendiste
+        return f"Investigando datos de cultivo para {planta}..."
+
 
 async def setup(bot):
     await bot.add_cog(AIChat(bot))
