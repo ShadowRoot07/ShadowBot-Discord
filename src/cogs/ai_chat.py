@@ -9,9 +9,9 @@ class AIChat(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-        
-        # Sistema de Cooldown: 1 mensaje cada 5 segundos por usuario
-        self._cd = commands.Cooldown(1, 5) 
+
+        # Sistema de Cooldown corregido: 1 mensaje cada 5 segundos por usuario
+        self._cd = CooldownMapping.from_cooldown(1, 5, BucketType.user)
 
         # Configuración de base de datos
         base_url = os.getenv("DATABASE_URL", "").split('?')[0]
@@ -27,20 +27,18 @@ class AIChat(commands.Cog):
         try:
             print("🔍 Filtrando modelos con cuota estable...")
             modelos = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-            
-            # Buscamos específicamente 1.5-flash, evitando versiones experimentales/2.0
+
             for m in modelos:
                 if "models/gemini-1.5-flash" == m:
                     print(f"✅ Modelo estable seleccionado: {m}")
                     return genai.GenerativeModel(m)
-            
-            # Fallback a cualquier 1.5
+
             for m in modelos:
                 if "1.5" in m:
                     return genai.GenerativeModel(m)
         except Exception as e:
             print(f"❌ Error buscando modelos: {e}")
-        
+
         return genai.GenerativeModel('gemini-1.5-flash')
 
     def get_db_connection(self):
@@ -91,12 +89,14 @@ class AIChat(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message):
-        if message.author.bot or message.content.startswith('!'): return
+        if message.author.bot or message.content.startswith('!'): 
+            return
 
         if self.bot.user.mentioned_in(message) or isinstance(message.channel, discord.DMChannel):
-            # Aplicar Cooldown manual
+            # Lógica de Cooldown Corregida
             bucket = self._cd.get_bucket(message)
             retry_after = bucket.update_rate_limit()
+            
             if retry_after:
                 return await message.reply(f"⏳ ¡Cálmate! Estás escribiendo muy rápido. Espera {round(retry_after, 1)}s.")
 
