@@ -8,7 +8,7 @@ class AIChat(commands.Cog):
         self.bot = bot
         # Configuración de Gemini
         genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-        self.model = genai.GenerativeModel('gemini-pro')
+        self.model = genai.GenerativeModel('gemini-1.5-flash')
         # Pequeña memoria local para mantener el hilo (opcional)
         self.chat = self.model.start_chat(history=[])
 
