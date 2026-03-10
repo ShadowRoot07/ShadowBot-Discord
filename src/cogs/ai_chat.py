@@ -3,48 +3,44 @@ import discord
 import google.generativeai as genai
 from discord.ext import commands
 import psycopg2
+from discord.ext.commands import CooldownMapping, BucketType
 
 class AIChat(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
         
+        # Sistema de Cooldown: 1 mensaje cada 5 segundos por usuario
+        self._cd = commands.Cooldown(1, 5) 
+
         # Configuración de base de datos
         base_url = os.getenv("DATABASE_URL", "").split('?')[0]
         self.db_url = f"{base_url}?sslmode=require"
 
         print(f"--- [SHADOWBOT CORE CONFIG] ---")
-
-        # 1. ALGORITMO DE BÚSQUEDA DE MODELO FLASH GRATUITO
         self.model = self.buscar_mejor_modelo_flash()
-
-        # 2. Forzar Base de Datos
         self.init_db()
         print(f"--- [SISTEMA ONLINE] ---")
 
     def buscar_mejor_modelo_flash(self):
-        """Busca dinámicamente el modelo flash disponible para evitar errores 404."""
+        """Busca el modelo 1.5-flash para tener cuotas más altas y gratuitas."""
         try:
-            print("🔍 Buscando modelos Flash disponibles...")
+            print("🔍 Filtrando modelos con cuota estable...")
             modelos = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
             
-            # Prioridad: gemini-1.5-flash (el más estable)
+            # Buscamos específicamente 1.5-flash, evitando versiones experimentales/2.0
             for m in modelos:
-                if "1.5-flash" in m:
-                    print(f"✅ Modelo encontrado y seleccionado: {m}")
+                if "models/gemini-1.5-flash" == m:
+                    print(f"✅ Modelo estable seleccionado: {m}")
                     return genai.GenerativeModel(m)
             
-            # Si no encuentra 1.5, busca cualquier flash
+            # Fallback a cualquier 1.5
             for m in modelos:
-                if "flash" in m:
-                    print(f"⚠️ Usando variante flash alternativa: {m}")
+                if "1.5" in m:
                     return genai.GenerativeModel(m)
-                    
         except Exception as e:
-            print(f"❌ Error listando modelos: {e}")
+            print(f"❌ Error buscando modelos: {e}")
         
-        # Si todo falla, intentar el nombre estándar (fallback)
-        print("ℹ️ Usando modelo por defecto: models/gemini-1.5-flash")
         return genai.GenerativeModel('gemini-1.5-flash')
 
     def get_db_connection(self):
@@ -98,22 +94,32 @@ class AIChat(commands.Cog):
         if message.author.bot or message.content.startswith('!'): return
 
         if self.bot.user.mentioned_in(message) or isinstance(message.channel, discord.DMChannel):
+            # Aplicar Cooldown manual
+            bucket = self._cd.get_bucket(message)
+            retry_after = bucket.update_rate_limit()
+            if retry_after:
+                return await message.reply(f"⏳ ¡Cálmate! Estás escribiendo muy rápido. Espera {round(retry_after, 1)}s.")
+
             async with message.channel.typing():
                 user_id = message.author.id
                 prompt = message.content.replace(f'<@!{self.bot.user.id}>', '').replace(f'<@{self.bot.user.id}>', '').strip()
 
                 historial = self.obtener_historial(user_id)
                 contexto = "\n".join([f"{m['role']}: {m['content']}" for m in historial])
-
                 instruccion = f"Eres ShadowBot_V1. Estilo Cyberpunk. Contexto previo:\n{contexto}"
 
                 try:
                     response = self.model.generate_content(f"{instruccion}\n\nUsuario: {prompt}")
+                    
                     self.guardar_memoria(user_id, "usuario", prompt)
                     self.guardar_memoria(user_id, "bot", response.text)
                     await message.reply(response.text)
+                
                 except Exception as e:
-                    await message.reply(f"🔥 Error: {e}")
+                    if "429" in str(e):
+                        await message.reply("💤 He agotado mi energía cerebral por ahora (Límite de cuota). Inténtalo en un minuto.")
+                    else:
+                        await message.reply(f"🔥 Error en los sistemas: {e}")
 
 async def setup(bot):
     await bot.add_cog(AIChat(bot))
