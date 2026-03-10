@@ -12,18 +12,30 @@ class AIChat(commands.Cog):
         genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
         self.db_url = os.getenv("DATABASE_URL")
 
-        # Intentar inicializar la base de datos
+        # 1. ALGORITMO DE DETECCIÓN DE MODELO (Solución al 404)
+        try:
+            available_models = [
+                m.name for m in genai.list_models() 
+                if 'generateContent' in m.supported_generation_methods
+            ]
+            # Priorizamos flash para evitar errores de cuota
+            flash_models = [m for m in available_models if "flash" in m]
+            self.model_name = flash_models[0] if flash_models else 'models/gemini-1.5-flash'
+            print(f"✅ IA detectada: {self.model_name}")
+        except Exception as e:
+            print(f"⚠️ Error listando modelos: {e}")
+            self.model_name = 'models/gemini-1.5-flash'
+
+        self.model = genai.GenerativeModel(self.model_name)
+
+        # 2. Inicializar Base de Datos con SSL
         try:
             self.init_db()
-            print("✅ Conexión a Neon.tech exitosa.")
+            print("✅ Memoria en Neon.tech lista.")
         except Exception as e:
-            print(f"❌ Error crítico conectando a Neon: {e}")
-
-        self.model = genai.GenerativeModel('gemini-1.5-flash')
-        # Ya no usamos self.chat = self.model.start_chat porque ahora la memoria la manejas tú con SQL
+            print(f"❌ Error en DB: {e}")
 
     def get_db_connection(self):
-        """Crea una conexión con SSL requerido para Neon."""
         return psycopg2.connect(self.db_url, sslmode='require')
 
     def init_db(self):
@@ -52,9 +64,9 @@ class AIChat(commands.Cog):
             cur.close()
             conn.close()
         except Exception as e:
-            print(f"⚠️ Error guardando memoria: {e}")
+            print(f"⚠️ No pude guardar en memoria: {e}")
 
-    def obtener_historial(self, user_id, limite=10):
+    def obtener_historial(self, user_id, limite=8):
         try:
             conn = self.get_db_connection()
             cur = conn.cursor()
@@ -65,7 +77,6 @@ class AIChat(commands.Cog):
             conn.close()
             return [{"role": f[0], "content": f[1]} for f in reversed(filas)]
         except Exception as e:
-            print(f"⚠️ Error recuperando historial: {e}")
             return []
 
     @commands.Cog.listener()
@@ -79,29 +90,26 @@ class AIChat(commands.Cog):
                     user_id = message.author.id
                     prompt_original = message.content.replace(f'<@!{self.bot.user.id}>', '').replace(f'<@{self.bot.user.id}>', '').strip()
 
-                    # 1. Recuperar memoria
+                    # Recuperar memoria
                     historial = self.obtener_historial(user_id)
-                    contexto_memoria = ""
-                    for m in historial:
-                        role_label = "Sroot" if m['role'] == "usuario" else "Sbot"
-                        contexto_memoria += f"{role_label}: {m['content']}\n"
+                    contexto_memoria = "\n".join([f"{m['role']}: {m['content']}" for m in historial])
 
-                    # 2. Instrucción de Sistema
+                    # Instrucción de Sistema con Personalidad y Formato de Código
                     instruccion_sistema = (
                         f"SISTEMA: Eres ShadowBot_V1 de ShadowRoot Lab.\n"
-                        f"MEMORIA DE CONVERSACIÓN:\n{contexto_memoria}\n"
-                        f"Responde de forma concisa, Cyberpunk y usa bloques Markdown para código."
+                        f"CONSTRICCIONES: Responde breve, estilo Cyberpunk. Usa bloques de código Markdown con comentarios.\n"
+                        f"MEMORIA DE CONVERSACIÓN:\n{contexto_memoria}"
                     )
 
                     response = self.model.generate_content(f"{instruccion_sistema}\n\nUsuario: {prompt_original}")
 
-                    # 3. Guardar en DB
+                    # Guardar en DB
                     self.guardar_memoria(user_id, "usuario", prompt_original)
                     self.guardar_memoria(user_id, "bot", response.text)
 
                     await message.reply(response.text)
                 except Exception as e:
-                    await message.channel.send(f"⚠️ Error en mi núcleo: {e}")
+                    await message.channel.send(f"⚠️ Error en mi núcleo cerebral: {e}")
 
 async def setup(bot):
     await bot.add_cog(AIChat(bot))
